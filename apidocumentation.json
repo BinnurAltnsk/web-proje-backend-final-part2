@@ -1,0 +1,717 @@
+{
+  "api": {
+    "name": "Smart Campus Management System API",
+    "version": "1.0.0",
+    "baseUrl": "http://localhost:5000/api/v1",
+    "description": "Akıllı Kampüs Yönetim Sistemi Backend API Dokümantasyonu",
+    "authentication": {
+      "type": "Bearer Token (JWT)",
+      "description": "Çoğu endpoint için JWT token gereklidir. Token'ı Authorization header'ında 'Bearer {token}' formatında gönderin.",
+      "tokenExpiration": {
+        "accessToken": "15 dakika",
+        "refreshToken": "7 gün"
+      }
+    },
+    "commonHeaders": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer {accessToken}"
+    },
+    "commonResponses": {
+      "success": {
+        "status": 200,
+        "structure": {
+          "success": true,
+          "message": "İşlem başarılı",
+          "data": {}
+        }
+      },
+      "error": {
+        "status": 400,
+        "structure": {
+          "success": false,
+          "message": "Hata mesajı",
+          "error": "Detaylı hata bilgisi"
+        }
+      },
+      "unauthorized": {
+        "status": 401,
+        "message": "Yetkilendirme hatası - Token geçersiz veya eksik"
+      },
+      "forbidden": {
+        "status": 403,
+        "message": "Bu işlem için yetkiniz yok"
+      },
+      "notFound": {
+        "status": 404,
+        "message": "Kayıt bulunamadı"
+      }
+    }
+  },
+  "endpoints": {
+    "authentication": {
+      "group": "Kimlik Doğrulama",
+      "basePath": "/auth",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/register",
+          "name": "Kullanıcı Kaydı",
+          "description": "Yeni kullanıcı kaydı oluşturur. Öğrenci veya öğretim üyesi olarak kayıt yapılabilir.",
+          "authenticationRequired": false,
+          "requestBody": {
+            "required": true,
+            "contentType": "application/json",
+            "schema": {
+              "email": {
+                "type": "string",
+                "format": "email",
+                "required": true,
+                "description": "Kullanıcı e-posta adresi"
+              },
+              "password": {
+                "type": "string",
+                "required": true,
+                "minLength": 8,
+                "pattern": "En az 1 büyük harf, 1 küçük harf ve 1 rakam içermeli",
+                "description": "Kullanıcı şifresi"
+              },
+              "role": {
+                "type": "string",
+                "required": true,
+                "enum": ["student", "faculty"],
+                "description": "Kullanıcı rolü"
+              },
+              "student_number": {
+                "type": "string",
+                "required": false,
+                "description": "Öğrenci numarası (role='student' ise)"
+              },
+              "department_id": {
+                "type": "number",
+                "required": false,
+                "description": "Bölüm ID'si"
+              },
+              "employee_number": {
+                "type": "string",
+                "required": false,
+                "description": "Personel numarası (role='faculty' ise)"
+              },
+              "title": {
+                "type": "string",
+                "required": false,
+                "description": "Ünvan (Dr., Prof., Arş. Gör. vb.) (role='faculty' ise)"
+              },
+              "name": {
+                "type": "string",
+                "required": false,
+                "description": "Kullanıcı adı"
+              }
+            },
+            "example": {
+              "email": "ogrenci@example.com",
+              "password": "Sifre123",
+              "role": "student",
+              "student_number": "2024001",
+              "department_id": 1
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Kayıt başarılı",
+              "body": {
+                "success": true,
+                "message": "Kayıt başarılı. Lütfen e-postanızı kontrol edin."
+              }
+            },
+            "400": {
+              "description": "Geçersiz istek veya e-posta zaten kayıtlı",
+              "body": {
+                "success": false,
+                "message": "Bu e-posta veya numara zaten kayıtlı."
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/login",
+          "name": "Kullanıcı Girişi",
+          "description": "Kullanıcı girişi yapar ve access token ile refresh token döner.",
+          "authenticationRequired": false,
+          "requestBody": {
+            "required": true,
+            "contentType": "application/json",
+            "schema": {
+              "email": {
+                "type": "string",
+                "format": "email",
+                "required": true,
+                "description": "Kullanıcı e-posta adresi"
+              },
+              "password": {
+                "type": "string",
+                "required": true,
+                "description": "Kullanıcı şifresi"
+              }
+            },
+            "example": {
+              "email": "ogrenci@example.com",
+              "password": "Sifre123"
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Giriş başarılı",
+              "body": {
+                "success": true,
+                "data": {
+                  "user": {
+                    "id": "uuid",
+                    "email": "ogrenci@example.com",
+                    "role": "student"
+                  },
+                  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                }
+              }
+            },
+            "401": {
+              "description": "Geçersiz kimlik bilgileri veya e-posta doğrulanmamış",
+              "body": {
+                "success": false,
+                "message": "Geçersiz kimlik bilgileri. (veya) Lütfen önce e-posta adresinizi doğrulayın."
+              },
+              "possibleMessages": [
+                "Geçersiz kimlik bilgileri.",
+                "Lütfen önce e-posta adresinizi doğrulayın."
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/verify-email",
+          "name": "E-posta Doğrulama",
+          "description": "Kayıt sırasında gönderilen e-posta doğrulama token'ı ile hesabı aktifleştirir.",
+          "authenticationRequired": false,
+          "requestBody": {
+            "required": true,
+            "contentType": "application/json",
+            "schema": {
+              "token": {
+                "type": "string",
+                "required": true,
+                "description": "E-posta doğrulama token'ı"
+              }
+            },
+            "example": {
+              "token": "abc123def456..."
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "E-posta başarıyla doğrulandı",
+              "body": {
+                "success": true,
+                "message": "E-posta başarıyla doğrulandı. Giriş yapabilirsiniz.",
+                "data": {
+                  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                }
+              }
+            },
+            "400": {
+              "description": "Geçersiz veya kullanılmış token",
+              "body": {
+                "success": false,
+                "message": "Geçersiz veya zaten kullanılmış doğrulama tokenı."
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/refresh",
+          "name": "Token Yenileme",
+          "description": "Refresh token kullanarak yeni access token alır.",
+          "authenticationRequired": false,
+          "requestBody": {
+            "required": true,
+            "contentType": "application/json",
+            "schema": {
+              "refreshToken": {
+                "type": "string",
+                "required": true,
+                "description": "Refresh token"
+              }
+            },
+            "example": {
+              "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Token başarıyla yenilendi",
+              "body": {
+                "success": true,
+                "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              }
+            },
+            "401": {
+              "description": "Geçersiz veya süresi dolmuş refresh token",
+              "body": {
+                "success": false,
+                "message": "Geçersiz veya süresi dolmuş refresh token."
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/logout",
+          "name": "Çıkış Yapma",
+          "description": "Kullanıcı çıkışı yapar. (Not: Token'lar client-side'da silinmelidir)",
+          "authenticationRequired": false,
+          "requestBody": {
+            "required": false
+          },
+          "responses": {
+            "200": {
+              "description": "Çıkış başarılı",
+              "body": {
+                "success": true,
+                "message": "Başarıyla çıkış yapıldı."
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/forgot-password",
+          "name": "Şifre Sıfırlama İsteği",
+          "description": "Şifre sıfırlama e-postası gönderir.",
+          "authenticationRequired": false,
+          "requestBody": {
+            "required": true,
+            "contentType": "application/json",
+            "schema": {
+              "email": {
+                "type": "string",
+                "format": "email",
+                "required": true,
+                "description": "Kullanıcı e-posta adresi"
+              }
+            },
+            "example": {
+              "email": "ogrenci@example.com"
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "E-posta gönderildi",
+              "body": {
+                "success": true,
+                "message": "E-posta gönderildi."
+              }
+            },
+            "404": {
+              "description": "E-posta ile kayıtlı kullanıcı bulunamadı",
+              "body": {
+                "success": false,
+                "message": "Bu email ile kayıtlı kullanıcı yok."
+              }
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/auth/reset-password/:resettoken",
+          "name": "Şifre Sıfırlama",
+          "description": "Şifre sıfırlama token'ı ile yeni şifre belirler.",
+          "authenticationRequired": false,
+          "pathParameters": {
+            "resettoken": {
+              "type": "string",
+              "required": true,
+              "description": "Şifre sıfırlama token'ı (URL parametresi)"
+            }
+          },
+          "requestBody": {
+            "required": true,
+            "contentType": "application/json",
+            "schema": {
+              "password": {
+                "type": "string",
+                "required": true,
+                "minLength": 8,
+                "pattern": "En az 1 büyük harf, 1 küçük harf ve 1 rakam içermeli",
+                "description": "Yeni şifre"
+              }
+            },
+            "example": {
+              "password": "YeniSifre123"
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Şifre başarıyla güncellendi",
+              "body": {
+                "success": true,
+                "message": "Şifre başarıyla güncellendi. Giriş yapabilirsiniz."
+              }
+            },
+            "400": {
+              "description": "Geçersiz veya süresi dolmuş token",
+              "body": {
+                "success": false,
+                "message": "Geçersiz veya süresi dolmuş token."
+              }
+            }
+          }
+        }
+      ]
+    },
+    "users": {
+      "group": "Kullanıcı İşlemleri",
+      "basePath": "/users",
+      "description": "Tüm endpoint'ler authentication gerektirir (Bearer Token)",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/users/me",
+          "name": "Profil Bilgilerini Getir",
+          "description": "Giriş yapmış kullanıcının kendi profil bilgilerini getirir.",
+          "authenticationRequired": true,
+          "requestBody": {
+            "required": false
+          },
+          "responses": {
+            "200": {
+              "description": "Profil bilgileri başarıyla getirildi",
+              "body": {
+                "success": true,
+                "data": {
+                  "id": "uuid",
+                  "email": "ogrenci@example.com",
+                  "phone_number": "5551234567",
+                  "address": "İstanbul, Türkiye",
+                  "bio": "Kullanıcı hakkında bilgi",
+                  "role": "student",
+                  "is_verified": true,
+                  "profile_picture_url": "/uploads/profile_images/filename.jpg",
+                  "created_at": "2024-01-01T00:00:00.000Z",
+                  "updated_at": "2024-01-01T00:00:00.000Z",
+                  "studentProfile": {
+                    "student_number": "2024001",
+                    "gpa": 3.5,
+                    "cgpa": 3.4,
+                    "current_semester": 3,
+                    "department": {
+                      "id": 1,
+                      "name": "Bilgisayar Mühendisliği",
+                      "code": "CSE"
+                    }
+                  },
+                  "facultyProfile": null
+                }
+              }
+            },
+            "404": {
+              "description": "Kullanıcı bulunamadı",
+              "body": {
+                "success": false,
+                "message": "Kullanıcı bulunamadı."
+              }
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/users/me",
+          "name": "Profil Güncelle",
+          "description": "Giriş yapmış kullanıcının kendi profil bilgilerini günceller.",
+          "authenticationRequired": true,
+          "requestBody": {
+            "required": true,
+            "contentType": "application/json",
+            "schema": {
+              "phone_number": {
+                "type": "string",
+                "required": false,
+                "description": "Telefon numarası"
+              },
+              "address": {
+                "type": "string",
+                "required": false,
+                "description": "Adres"
+              },
+              "bio": {
+                "type": "string",
+                "required": false,
+                "description": "Kullanıcı hakkında bilgi"
+              },
+              "department_id": {
+                "type": "number",
+                "required": false,
+                "description": "Bölüm ID'si"
+              },
+              "student_number": {
+                "type": "string",
+                "required": false,
+                "description": "Öğrenci numarası (sadece student rolü için)"
+              },
+              "office_location": {
+                "type": "string",
+                "required": false,
+                "description": "Ofis konumu (sadece faculty rolü için)"
+              }
+            },
+            "example": {
+              "phone_number": "5551234567",
+              "address": "İstanbul, Türkiye",
+              "bio": "Yeni bio bilgisi",
+              "department_id": 1
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Profil başarıyla güncellendi",
+              "body": {
+                "success": true,
+                "message": "Profil başarıyla güncellendi.",
+                "data": {
+                  "id": "uuid",
+                  "email": "ogrenci@example.com",
+                  "phone_number": "5551234567",
+                  "address": "İstanbul, Türkiye",
+                  "bio": "Yeni bio bilgisi",
+                  "role": "student",
+                  "studentProfile": {
+                    "student_number": "2024001",
+                    "department": {
+                      "id": 1,
+                      "name": "Bilgisayar Mühendisliği",
+                      "code": "CSE"
+                    }
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Kullanıcı bulunamadı",
+              "body": {
+                "success": false,
+                "message": "Kullanıcı bulunamadı."
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/users/me/profile-picture",
+          "name": "Profil Fotoğrafı Yükle",
+          "description": "Giriş yapmış kullanıcının profil fotoğrafını yükler.",
+          "authenticationRequired": true,
+          "requestBody": {
+            "required": true,
+            "contentType": "multipart/form-data",
+            "schema": {
+              "profile_image": {
+                "type": "file",
+                "required": true,
+                "description": "Profil fotoğrafı dosyası (resim formatı)"
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Profil fotoğrafı başarıyla yüklendi",
+              "body": {
+                "success": true,
+                "message": "Profil fotoğrafı güncellendi.",
+                "data": {
+                  "profilePictureUrl": "/uploads/profile_images/filename.jpg"
+                }
+              }
+            },
+            "400": {
+              "description": "Dosya yüklenmedi",
+              "body": {
+                "success": false,
+                "message": "Lütfen bir resim dosyası yükleyin."
+              }
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/users/change-password",
+          "name": "Şifre Değiştir",
+          "description": "Giriş yapmış kullanıcının şifresini değiştirir.",
+          "authenticationRequired": true,
+          "requestBody": {
+            "required": true,
+            "contentType": "application/json",
+            "schema": {
+              "currentPassword": {
+                "type": "string",
+                "required": true,
+                "description": "Mevcut şifre"
+              },
+              "newPassword": {
+                "type": "string",
+                "required": true,
+                "minLength": 8,
+                "pattern": "En az 1 büyük harf, 1 küçük harf ve 1 rakam içermeli",
+                "description": "Yeni şifre"
+              }
+            },
+            "example": {
+              "currentPassword": "EskiSifre123",
+              "newPassword": "YeniSifre123"
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Şifre başarıyla değiştirildi",
+              "body": {
+                "success": true,
+                "message": "Şifreniz başarıyla değiştirildi."
+              }
+            },
+            "400": {
+              "description": "Mevcut şifre hatalı",
+              "body": {
+                "success": false,
+                "message": "Mevcut şifreniz hatalı."
+              }
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/users",
+          "name": "Tüm Kullanıcıları Listele (Admin)",
+          "description": "Tüm kullanıcıları listeler. Sadece admin rolüne sahip kullanıcılar erişebilir.",
+          "authenticationRequired": true,
+          "authorization": {
+            "requiredRole": "admin"
+          },
+          "queryParameters": {
+            "page": {
+              "type": "number",
+              "required": false,
+              "default": 1,
+              "description": "Sayfa numarası"
+            },
+            "limit": {
+              "type": "number",
+              "required": false,
+              "default": 10,
+              "description": "Sayfa başına kayıt sayısı"
+            },
+            "search": {
+              "type": "string",
+              "required": false,
+              "description": "E-posta adresine göre arama"
+            },
+            "role": {
+              "type": "string",
+              "required": false,
+              "enum": ["student", "faculty", "admin", "staff"],
+              "description": "Rol filtresi"
+            }
+          },
+          "requestBody": {
+            "required": false
+          },
+          "responses": {
+            "200": {
+              "description": "Kullanıcı listesi başarıyla getirildi",
+              "body": {
+                "success": true,
+                "data": [
+                  {
+                    "id": "uuid",
+                    "email": "ogrenci@example.com",
+                    "role": "student",
+                    "is_verified": true,
+                    "studentProfile": {
+                      "student_number": "2024001",
+                      "department": {
+                        "id": 1,
+                        "name": "Bilgisayar Mühendisliği",
+                        "code": "CSE"
+                      }
+                    }
+                  }
+                ],
+                "pagination": {
+                  "total": 100,
+                  "page": 1,
+                  "totalPages": 10
+                }
+              }
+            },
+            "403": {
+              "description": "Yetkisiz erişim",
+              "body": {
+                "success": false,
+                "message": "Bu işlem için yetkiniz yok."
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "dataModels": {
+    "User": {
+      "id": "UUID (string)",
+      "email": "string (unique, email format)",
+      "phone_number": "string (optional)",
+      "address": "string (optional)",
+      "bio": "string (optional)",
+      "role": "enum: 'student' | 'faculty' | 'admin' | 'staff'",
+      "is_verified": "boolean",
+      "profile_picture_url": "string (optional)",
+      "created_at": "datetime",
+      "updated_at": "datetime"
+    },
+    "Student": {
+      "student_number": "string (unique)",
+      "gpa": "float (default: 0.0)",
+      "cgpa": "float (default: 0.0)",
+      "current_semester": "integer (default: 1)",
+      "departmentId": "number (foreign key)"
+    },
+    "Faculty": {
+      "employee_number": "string (unique)",
+      "title": "string (e.g., 'Dr.', 'Prof.', 'Arş. Gör.')",
+      "office_location": "string (optional)",
+      "departmentId": "number (foreign key)"
+    },
+    "Department": {
+      "id": "number",
+      "name": "string",
+      "code": "string"
+    }
+  },
+  "errorCodes": {
+    "400": "Bad Request - Geçersiz istek",
+    "401": "Unauthorized - Yetkilendirme hatası",
+    "403": "Forbidden - Bu işlem için yetkiniz yok",
+    "404": "Not Found - Kayıt bulunamadı",
+    "500": "Internal Server Error - Sunucu hatası"
+  },
+  "notes": {
+    "authentication": "Çoğu endpoint için Authorization header'ında Bearer token gönderilmelidir. Token formatı: 'Bearer {accessToken}'",
+    "tokenRefresh": "Access token süresi dolduğunda refresh token kullanarak yeni access token alınabilir.",
+    "emailVerification": "Kayıt sonrası kullanıcıya e-posta doğrulama linki gönderilir. Hesap doğrulanmadan giriş yapılamaz.",
+    "passwordReset": "Şifre sıfırlama token'ı 10 dakika geçerlidir.",
+    "fileUpload": "Profil fotoğrafı yükleme için multipart/form-data kullanılmalıdır.",
+    "pagination": "Listeleme endpoint'lerinde sayfalama için 'page' ve 'limit' query parametreleri kullanılabilir.",
+    "rateLimiting": "API'ye 15 dakikada maksimum 100 istek gönderilebilir."
+  }
+}
+
