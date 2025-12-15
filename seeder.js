@@ -1,7 +1,7 @@
 const fs = require('fs');
 const colors = require('colors');
 const dotenv = require('dotenv');
-const bcrypt = require('bcryptjs'); // <--- EKLENDİ: Şifreleme için
+// const bcrypt = require('bcryptjs'); // GEREK YOK: Model hook'u halledecek
 const db = require('./src/models'); 
 
 // Çevre değişkenlerini yükle
@@ -83,16 +83,14 @@ const seedData = async () => {
     // 4. KULLANICILAR (ADMIN, HOCA, ÖĞRENCİ)
     // -----------------------------------------------------------------------
     
-    // NOT: password_hash'e 'temp' veriyoruz ki validasyon hatası almayalım.
-    // User modelindeki 'beforeCreate' hook'u devreye girip 
-    // 'password' alanını hashleyerek 'password_hash'i otomatik düzeltecektir.
+    // User modelindeki 'beforeCreate' hook'u sayesinde 
+    // 'password_hash' alanına düz metin şifre verdiğimizde otomatik hashlenir.
 
     // --- Admin ---
     await User.create({
       name: 'Sistem Yöneticisi',
       email: 'admin@smartcampus.com',
-      password: 'password123',      // Sanal alan (Hook bunu kullanacak)
-      password_hash: 'temp_hash',   // Validasyonu geçmek için geçici değer
+      password_hash: 'Password123', // Doğrudan şifreyi veriyoruz, hook hashleyecek
       role: 'admin',
       is_verified: true
     });
@@ -101,8 +99,7 @@ const seedData = async () => {
     const userFac1 = await User.create({
       name: 'Dr. Ahmet Yılmaz',
       email: 'ahmet@smartcampus.com',
-      password: 'password123',
-      password_hash: 'temp_hash',
+      password_hash: 'Password123',
       role: 'faculty',
       is_verified: true
     });
@@ -117,8 +114,7 @@ const seedData = async () => {
     const userFac2 = await User.create({
       name: 'Prof. Dr. Zeynep Kaya',
       email: 'zeynep@smartcampus.com',
-      password: 'password123',
-      password_hash: 'temp_hash',
+      password_hash: 'Password123',
       role: 'faculty',
       is_verified: true
     });
@@ -134,8 +130,7 @@ const seedData = async () => {
     const userStu1 = await User.create({
       name: 'Ali Demir',
       email: 'ali@smartcampus.com',
-      password: 'password123',
-      password_hash: 'temp_hash',
+      password_hash: 'Password123',
       role: 'student',
       is_verified: true
     });
@@ -144,15 +139,13 @@ const seedData = async () => {
       departmentId: deptComputer.id,
       student_number: '2021001',
       gpa: 3.50,
-      cgpa: 3.40,
       current_semester: 3
     });
 
     const userStu2 = await User.create({
       name: 'Ayşe Çelik',
       email: 'ayse@smartcampus.com',
-      password: 'password123',
-      password_hash: 'temp_hash',
+      password_hash: 'Password123',
       role: 'student',
       is_verified: true
     });
@@ -161,7 +154,6 @@ const seedData = async () => {
       departmentId: deptComputer.id,
       student_number: '2021002',
       gpa: 2.80,
-      cgpa: 2.90,
       current_semester: 3
     });
 
@@ -255,6 +247,9 @@ const seedData = async () => {
     // -----------------------------------------------------------------------
     // 7. DUYURULAR (ANNOUNCEMENTS)
     // -----------------------------------------------------------------------
+    // Not: Enum hatalarını önlemek için model tanımındaki enum değerlerine dikkat edilmeli.
+    // Varsayılan olarak priority: 'normal', target_role: 'all' vb. olabilir.
+    
     await Announcement.create({
       title: '2025 Bahar Dönemi Başlıyor',
       content: 'Tüm öğrencilerimize yeni dönemde başarılar dileriz. Ders kayıtları açılmıştır.',

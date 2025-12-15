@@ -36,9 +36,9 @@ describe('User & Dashboard Tests', () => {
   });
 
   it('should update user password', async () => {
-    // ROTA DÜZELTİLDİ: /api/v1/users/update-password
+    // DÜZELTME: Rota /api/v1/users/change-password olarak güncellendi
     const res = await request(app)
-      .put('/api/v1/users/update-password') 
+      .put('/api/v1/users/change-password') 
       .set('Authorization', `Bearer ${userToken}`)
       .send({
         currentPassword: 'Password123',
