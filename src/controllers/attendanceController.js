@@ -10,6 +10,7 @@ const asyncHandler = require('../middleware/async');
 const { calculateDistance } = require('../utils/geoUtils');
 const crypto = require('crypto');
 const CAMPUS_IPS = require('../config/campusIPs');
+const checkIp = require('ip-range-check');
 
 // @desc    Yoklama Oturumu Başlat (Hoca veya Admin)
 // @route   POST /api/v1/attendance/sessions
@@ -129,23 +130,22 @@ exports.checkIn = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // B) IP ADRESİ KONTROLÜ
-  // Proxy arkasında çalışıyorsa x-forwarded-for, yoksa socket adresi
+  // B) IP ADRESİ KONTROLÜ - GÜNCELLENEN KISIM
   let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   
   // IPv6 prefix temizliği (::ffff:)
+  // ip-range-check bazen bunu otomatik halleder ama temiz kalmasında fayda var
   if (clientIp && clientIp.includes('::ffff:')) {
     clientIp = clientIp.split('::ffff:')[1];
   }
 
-  if (!CAMPUS_IPS.includes(clientIp)) {
+  // YENİ KOD (EKLENECEK):
+  // checkIp fonksiyonu: clientIp adresi, CAMPUS_IPS listesindeki 
+  // herhangi bir IP veya CIDR bloğu (örn: 79.123.128.0/17) içindeyse TRUE döner.
+  if (!checkIp(clientIp, CAMPUS_IPS)) {
      isFlagged = true;
      flagReasons.push(`Kampüs Ağı Dışı IP: ${clientIp}`);
   }
-  
-  // Demo için sadece logluyoruz, production'da yukarıdaki yorumu açın.
-  console.log(`User IP: ${clientIp} - Valid IPs: ${CAMPUS_IPS}`);
-
 
   // C) HIZ (VELOCITY) KONTROLÜ - "Impossible Travel"
   // Öğrencinin en son girdiği yoklama kaydını bul
@@ -375,14 +375,17 @@ exports.getExcuseRequests = asyncHandler(async (req, res, next) => {
 });
 
 // @desc    Mazeret Onayla/Reddet (Hoca)
-// @route   PUT /api/v1/attendance/excuse-requests/:id
-// @access  Faculty
 exports.updateExcuseStatus = asyncHandler(async (req, res, next) => {
   const { status, notes } = req.body; // status: 'approved' veya 'rejected'
   const { id } = req.params;
 
+  // Talebi bul
   const request = await db.ExcuseRequest.findByPk(id, {
-    include: [{ model: AttendanceSession, as: 'session', include: ['section'] }]
+    include: [{ 
+        model: AttendanceSession, 
+        as: 'session', 
+        include: ['section'] 
+    }]
   });
 
   if (!request) return next(new ErrorResponse('Talep bulunamadı.', 404));
@@ -392,6 +395,7 @@ exports.updateExcuseStatus = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Bu işlemi yapmaya yetkiniz yok.', 403));
   }
 
+  // Durumu güncelle
   request.status = status;
   request.notes = notes;
   request.reviewedBy = req.user.facultyProfile.id;
@@ -399,10 +403,44 @@ exports.updateExcuseStatus = asyncHandler(async (req, res, next) => {
   
   await request.save();
 
-  // BONUS: Eğer onaylandıysa, AttendanceRecord tablosuna "Mazeretli" olarak işlenebilir.
-  // Ancak şimdilik sadece talep statüsünü güncelliyoruz.
+  // --- EKLEME: YOKLAMA KAYDINI GÜNCELLEME ---
+  if (status === 'approved') {
+    // 1. Bu oturum ve öğrenci için zaten bir kayıt var mı?
+    let attendanceRecord = await AttendanceRecord.findOne({
+      where: {
+        sessionId: request.sessionId,
+        studentId: request.studentId
+      }
+    });
 
-  res.status(200).json({ success: true, data: request });
+    if (attendanceRecord) {
+      // VARSA: Örneğin öğrenci derse girmiş ama "Şüpheli" düşmüş veya "Uzakta" kalmış.
+      // Kaydı temizleyip mazeretli olarak işaretliyoruz.
+      attendanceRecord.is_flagged = false;
+      attendanceRecord.flag_reason = `Mazeret Onaylandı: ${notes || 'Hoca Onayı'}`;
+      await attendanceRecord.save();
+    } else {
+      // YOKSA: Öğrenci hiç derse gelmemiş.
+      // Raporlarda çıkması için "Sanal" bir katılım kaydı oluşturuyoruz.
+      await AttendanceRecord.create({
+        sessionId: request.sessionId,
+        studentId: request.studentId,
+        check_in_time: request.created_at || new Date(), // Talep tarihi veya şu an
+        latitude: 0.0000,   // Konum olmadığı için 0
+        longitude: 0.0000,  // Konum olmadığı için 0
+        distance_from_center: 0,
+        is_flagged: false, // Onaylandığı için false
+        flag_reason: 'Mazeretli (Raporlu/İzinli)' // Raporlarda görünmesi için not
+      });
+    }
+  }
+  // ---------------------------------------------
+
+  res.status(200).json({ 
+    success: true, 
+    data: request,
+    message: status === 'approved' ? 'Mazeret onaylandı ve yoklama kaydı güncellendi.' : 'Mazeret reddedildi.'
+  });
 });
 
 
