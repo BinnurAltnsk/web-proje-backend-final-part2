@@ -13,6 +13,7 @@ router.put('/sessions/:id/close', authorize('faculty', 'admin'), attendanceContr
 // Yoklama Verme (Öğrenci)
 router.post('/sessions/:id/checkin', authorize('student'), attendanceController.checkIn);
 router.get('/my-attendance', authorize('student'), attendanceController.getMyAttendance);
+router.get('/missed-sessions', authorize('student'), attendanceController.getMissedSessions);
 
 // Raporlama (Hoca)
 router.get('/report/:sectionId', authorize('faculty', 'admin'), attendanceController.getAttendanceReport);

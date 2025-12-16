@@ -11,6 +11,7 @@ const { calculateDistance } = require('../utils/geoUtils');
 const crypto = require('crypto');
 const CAMPUS_IPS = require('../config/campusIPs');
 const checkIp = require('ip-range-check');
+const { Op } = require('sequelize'); 
 
 // @desc    Yoklama Oturumu Başlat (Hoca veya Admin)
 // @route   POST /api/v1/attendance/sessions
@@ -231,14 +232,66 @@ exports.closeSession = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, message: 'Oturum kapatıldı.', data: session });
 });
 
-// @desc    Öğrencinin Yoklama Durumu
+// @desc    Öğrencinin Yoklama Durumu ve İstatistikleri
 // @route   GET /api/v1/attendance/my-attendance
 // @access  Student
 exports.getMyAttendance = asyncHandler(async (req, res, next) => {
+  console.log("Controller çalıştı.");
+    console.log("Req Params:", req.params); // Boş {} olmalı
+    console.log("Req User ID:", req.user?.id); // Geçerli bir ID olmalı
   const student = await Student.findOne({ where: { userId: req.user.id } });
   
-  // Öğrencinin tüm yoklama kayıtları
-  const records = await AttendanceRecord.findAll({
+  // 1. Öğrencinin kayıtlı olduğu dersleri (Enrollment) bul
+  const enrollments = await Enrollment.findAll({
+    where: { studentId: student.id, status: 'enrolled' },
+    include: [{
+      model: CourseSection,
+      as: 'section',
+      include: [{ model: db.Course, as: 'course', attributes: ['code', 'name'] }]
+    }]
+  });
+
+  // 2. İstatistikleri Hesapla
+  const stats = await Promise.all(enrollments.map(async (enrollment) => {
+    const sectionId = enrollment.sectionId;
+
+// A) Bu şube için açılmış toplam oturum sayısı
+    // ÇÖZÜM: "cancelled olmayanlar" demek yerine, veritabanında VAR OLAN statüleri (active, closed) saydırıyoruz.
+    const totalSessions = await AttendanceSession.count({
+      where: { 
+        sectionId, 
+        status: ['active', 'closed'] // Sadece aktif ve kapanmış oturumları say
+      } 
+    });
+
+    // B) Öğrencinin bu şubedeki katılım sayısı
+    // Not: Sadece bu section'a ait session'lardaki kayıtları saymalıyız
+    const attendedSessions = await AttendanceRecord.count({
+      where: { studentId: student.id },
+      include: [{
+        model: AttendanceSession,
+        as: 'session',
+        where: { sectionId }
+      }]
+    });
+
+    const missedSessions = totalSessions - attendedSessions;
+    const attendanceRate = totalSessions > 0 ? (attendedSessions / totalSessions) * 100 : 100;
+    const absenceRate = 100 - attendanceRate;
+
+    return {
+      courseCode: enrollment.section.course.code,
+      courseName: enrollment.section.course.name,
+      totalSessions,
+      attendedSessions,
+      missedSessions,
+      attendanceRate: attendanceRate.toFixed(1),
+      absenceRate: absenceRate.toFixed(1)
+    };
+  }));
+
+  // 3. Detaylı Geçmiş (Eski fonksiyonelliği koruyalım - Liste için)
+  const history = await AttendanceRecord.findAll({
     where: { studentId: student.id },
     include: [{
       model: AttendanceSession,
@@ -249,10 +302,17 @@ exports.getMyAttendance = asyncHandler(async (req, res, next) => {
         include: [{ model: db.Course, as: 'course', attributes: ['code', 'name'] }]
       }]
     }],
-    order: [['check_in_time', 'DESC']]
+    order: [['check_in_time', 'DESC']],
+    limit: 20 // Son 20 hareketi gösterelim
   });
 
-  res.status(200).json({ success: true, count: records.length, data: records });
+  res.status(200).json({ 
+    success: true, 
+    data: {
+      stats,    // Ders bazlı özet (Yüzdeler burada)
+      history   // Son hareketler listesi
+    }
+  });
 });
 
 // @desc    Yoklama Raporu (Ders Bazlı)
@@ -327,48 +387,66 @@ exports.createExcuseRequest = asyncHandler(async (req, res, next) => {
 // @access  Student, Faculty
 exports.getExcuseRequests = asyncHandler(async (req, res, next) => {
   let whereClause = {};
+  
+  // Temel İlişkiler
   let includeOptions = [
     { 
       model: AttendanceSession, 
       as: 'session',
-      include: [{ model: CourseSection, as: 'section', include: [{ model: db.Course, as: 'course', attributes: ['code', 'name'] }] }] 
+      include: [{ 
+          model: CourseSection, 
+          as: 'section', 
+          include: [{ model: db.Course, as: 'course', attributes: ['code', 'name'] }] 
+      }] 
     }
   ];
 
+  // A) ÖĞRENCİ İSE: Sadece kendi mazeretleri
   if (req.user.role === 'student') {
-    // Öğrenci sadece kendi taleplerini görür
     const student = await Student.findOne({ where: { userId: req.user.id } });
+    if (!student) return next(new ErrorResponse('Öğrenci profili bulunamadı.', 404));
     whereClause.studentId = student.id;
-  } else if (req.user.role === 'faculty') {
-    // Hoca, KENDİ derslerine gelen talepleri görür
-    const facultyId = req.user.facultyProfile.id;
-    
-    // İlişkili tablolarda filtreleme yapmak için include içine where eklenmeli
-    // Ancak Sequelize'de iç içe sorgu performansı için önce hocanın sectionlarını bulup ID'lerini alabiliriz
-    // Veya basitçe tüm requestleri çekip JS ile filtreleyebiliriz (Veri az ise).
-    // Doğru yöntem: Include içinde filtreleme.
-    
-    // Şimdilik hocanın tüm mazeretleri görmesi için session->section->instructorId kontrolü yapan karmaşık bir query gerekir.
-    // Basitlik adına: Tüm bekleyen talepleri getirip, sadece hocanın derslerine ait olanları filter ile döndürelim.
-    // (Büyük veride performans sorunu olabilir ama proje için yeterli)
-    
+  } 
+  // B) HOCA İSE: Öğrenci detaylarını da getir
+  else if (req.user.role === 'faculty') {
     includeOptions.push({ 
       model: Student, 
       as: 'student', 
-      include: [{ model: db.User, as: 'user', attributes: ['name', 'email', 'student_number'] }] 
+      include: [{ 
+          model: db.User, 
+          as: 'user', 
+          attributes: ['name', 'email'] 
+      }] 
     });
   }
 
+  // Veritabanından mazeretleri çek
   const requests = await db.ExcuseRequest.findAll({
     where: whereClause,
     include: includeOptions,
     order: [['created_at', 'DESC']]
   });
 
-  // Hoca için filtreleme (Sadece kendi dersleri)
+  // HOCA İÇİN FİLTRELEME (HATA ÇÖZÜMÜ BURADA)
   let data = requests;
   if (req.user.role === 'faculty') {
-    data = requests.filter(req => req.session?.section?.instructorId === req.user.facultyProfile.id);
+    // 1. Hoca Profilini Veritabanından Manuel Olarak Buluyoruz
+    // (Middleware getirmediği için burada biz çekiyoruz)
+    // Model adınız 'Faculty' veya 'Instructor' olabilir. db.Faculty varsayıyorum.
+    const faculty = await db.Faculty.findOne({ where: { userId: req.user.id } });
+
+    if (!faculty) {
+        // Eğer veritabanında hoca kaydı yoksa boş liste dön veya hata ver
+        console.error("HATA: Bu User ID'ye bağlı Faculty profili yok:", req.user.id);
+        return res.status(200).json({ success: true, count: 0, data: [] });
+    }
+
+    // 2. Filtrelemeyi artık güvenli şekilde yapabiliriz
+    data = requests.filter(item => {
+        // Optional chaining (?.) ile null check yapıyoruz
+        const sectionInstructorId = item.session?.section?.instructorId;
+        return sectionInstructorId === faculty.id;
+    });
   }
 
   res.status(200).json({ success: true, count: data.length, data });
@@ -483,4 +561,61 @@ exports.manageAttendanceRecord = asyncHandler(async (req, res, next) => {
   }
 
   return next(new ErrorResponse('Geçersiz işlem.', 400));
+});
+
+
+// @desc    Mazeret Bildirilebilecek (Kaçırılan) Oturumları Getir
+// @route   GET /api/v1/attendance/missed-sessions
+// @access  Student
+exports.getMissedSessions = asyncHandler(async (req, res, next) => {
+  const student = await Student.findOne({ where: { userId: req.user.id } });
+
+  // 1. Öğrencinin kayıtlı olduğu section ID'lerini bul
+  const enrollments = await Enrollment.findAll({
+    where: { studentId: student.id, status: 'enrolled' },
+    attributes: ['sectionId']
+  });
+  const sectionIds = enrollments.map(e => e.sectionId);
+
+  // 2. Bu derslere ait "KAPANMIŞ" (closed) tüm oturumları bul
+  // (Aktif oturuma mazeret bildirilmez, bitmiş olması lazım)
+  const allSessions = await AttendanceSession.findAll({
+    where: {
+      sectionId: { [Op.in]: sectionIds },
+      status: 'closed' // Sadece biten dersler için mazeret verilebilir
+    },
+    include: [{
+      model: CourseSection,
+      as: 'section',
+      include: [{ model: db.Course, as: 'course', attributes: ['code', 'name'] }]
+    }],
+    order: [['date', 'DESC']]
+  });
+
+  // 3. Öğrencinin katıldığı oturumların ID'lerini bul
+  const attendedRecords = await AttendanceRecord.findAll({
+    where: { studentId: student.id },
+    attributes: ['sessionId']
+  });
+  const attendedSessionIds = attendedRecords.map(r => r.sessionId);
+
+  // 4. Öğrencinin daha önce mazeret bildirdiği oturumları bul (Onaylı veya Bekleyen)
+  const existingExcuses = await db.ExcuseRequest.findAll({
+    where: { studentId: student.id },
+    attributes: ['sessionId']
+  });
+  const excusedSessionIds = existingExcuses.map(e => e.sessionId);
+
+  // 5. FİLTRELEME: Tüm oturumlar içinden, GİTTİKLERİNİ ve MAZERET BİLDİRDİKLERİNİ çıkar
+  const missedSessions = allSessions.filter(session => {
+    const isAttended = attendedSessionIds.includes(session.id);
+    const isExcused = excusedSessionIds.includes(session.id);
+    return !isAttended && !isExcused;
+  });
+
+  res.status(200).json({
+    success: true,
+    count: missedSessions.length,
+    data: missedSessions
+  });
 });
